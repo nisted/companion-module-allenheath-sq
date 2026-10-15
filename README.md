@@ -1,4 +1,12 @@
-# companion-module-allenheath-sq
+# companion-module-allenheath-sq (grid branch)
+
+This `grid` branch is the official module's **v3.1.0** with Nige's additions, versioned `3.1.1-grid.N`:
+**Fader channel level to mix (from value/variable)** (a 0–127 fader position along the SQ's own fader taper, or
+dB; optional catch → latch → release pickup), a **Grid fader pickup LED** feedback and a **Level at target LED**
+feedback. Channel and mix are text boxes that take a number or a variable. The **Package (grid)** workflow builds
+the `.tgz` on every push to this branch. These additions are being offered to the official module; once they're
+in an official release, this branch can go.
+
 
 See [HELP.md](./companion/HELP.md) and [LICENSE](./LICENSE)
 
