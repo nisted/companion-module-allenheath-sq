@@ -23,7 +23,7 @@ export function getFeedbacks(instance: sqInstance, mixer: Mixer, choices: Choice
 		return {
 			type: 'boolean',
 			name: `Mute ${label}`,
-			description: 'Change colour',
+			description: 'Changes the button colour while it\'s muted',
 			options: [
 				{
 					type: 'dropdown',

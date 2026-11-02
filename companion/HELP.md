@@ -1,8 +1,8 @@
 # Allen & Heath SQ module
 
-Controls the Allen & Heath SQ.
+Hello. This one runs your Allen & Heath SQ desk from Companion.
 
-## Functions:
+## What it can do:
 
 - Mute Channel, Group, Mix, FX, MuteGroup, DCA, Matrix
 - Fader Level
@@ -15,7 +15,7 @@ Controls the Allen & Heath SQ.
 - Assign FX return to Mix, Group, FX send
 - Assign Mix to Matrix
 
-## Special Functions:
+## And a few extra tricks:
 
 - Current scene display variable
 - Scene recall variable (usable in triggers to respond to scene recalls)
@@ -23,6 +23,8 @@ Controls the Allen & Heath SQ.
 - Current Pan level display variables
 - Talkback macro
 - Scene step increment
+
+## What's changed, version by version
 
 New in v.3.0.0
 
@@ -130,74 +132,78 @@ New in v.1.3.9
 - Fix issue #31
 - Corrected some stuff
 
-Created by referring to all controls in the "SQ Midi Protocol Issue 3 - Firmware v. 1.5.0 or later" manual.
+Built from the "SQ Midi Protocol Issue 3 - Firmware v. 1.5.0 or later" manual, every control in it.
 
 Last update (d/m/y): 05/10/2021
 
 Current version: 1.3.9
 
-## Configuring:
+## Setting it up:
 
 ### New instance
 
-First step after adding SQ instance is to setting it up:
+Once you've added an SQ connection, fill these in:
 
-- Name: the name you want
-- Target IP: IP to reach your SQ (needs on the same net)
-- Model: your SQ model
-- NRPN Fader Law: same as your MIDI configuration on console !! IMPORTANT !!
-- Default talkback...: channel number where is connected your talkback microphone
-- MIDI channel: MIDI channel used to communicate with SQ !! IMPORTANT !!
-- Retrieve console...: Modality to retrieve console status
+- Name: whatever you like
+- Target IP: where the desk lives on the network. It needs to be on the same network as Companion.
+- Model: which SQ you've got
+- NRPN Fader Law: must match the MIDI settings on the desk. **Important.**
+- Default talkback...: the input channel your talkback mic is plugged into
+- MIDI channel: the MIDI channel the desk uses to talk to Companion. **Also important.**
+- Retrieve console...: how (and when) I fetch the desk's current status
 
 ### Soft keys 9 - 16 on SQ5
 
-To configure soft keys 9 - 16 on SQ5 you have to use MixPad application. After initially configuration, all settings will be stored in SQ memory until next configuration or console reset. To avoid deleting the soft key configuration when change scene, set "block" in Scenes Global Filter.
+Soft keys 9 to 16 on an SQ5 have to be set up in the MixPad app. Once they're done, the desk remembers them until you set them up again or reset the console. Changing scenes can wipe them, so set "block" in the Scenes Global Filter to keep them safe.
 
 ## How to:
 
 ### Scene step and current scene display
 
-"Scene step" admits a value between -50 and 50 in order to create forward and rewind scene call.
-"Current scene" set the current scene of your console to Companion into a variable (from version 1.3.0) then you'll be able to use it on any button text field. The value of the variable will be updating on first scene change performed by SQ or Companion. If your console starts with a scene other than 1, set the number in the option of the button, the press that button to setting up your starts current scene. To recall the variable on a button, type on button text field <b>$(</b> and Companion show you a list of SQ variables, then select "Scene - Current" (or digit <b>$(SQ:currentScene)</b>).
+"Scene step" takes a value between -50 and 50, so you can step forwards or backwards through scenes.
+
+"Current scene" puts the desk's current scene into a Companion variable (from version 1.3.0), and you can use it in any button's text. It updates on the first scene change, whether that's made on the SQ or from Companion. If your desk starts on a scene other than 1, put that number in the button's option, then press the button once to set your starting scene.
+
+To show it on a button, type <b>$(</b> in the button text and Companion will list the SQ variables. Pick "Scene - Current" (or just type <b>$(SQ:currentScene)</b>).
 
 ### Fader step increment
 
-There are two specific values on level drop-down menu (at the top) when you configuring fader level.
+When you set up a fader level, the two step choices sit right at the top of the level drop-down.
 
 ### Displaying fader level (dB Level)
 
-From version 1.3.0 fader dB level being a variable. Like the current scene variable, you you'll be able to use it on any button text field and the value will be updating on every level change on the console (or via Companion). To use the variable, start typing <b>$(</b> on button text field and Companion show you a list of SQ variables, then select a level dB you want. If you want to use multi-line text, using <b>\n</b> for a new line.
+Since version 1.3.0 each fader's dB level is a variable. Like the current scene, you can use it in any button's text, and it updates every time the level changes on the desk (or from Companion). Start typing <b>$(</b> in the button text, Companion lists the SQ variables, and you pick the level you want. For more than one line of text, use <b>\n</b> for a new line.
 
-Example: Showing up a dB fader level (-2) from channel 1 (Mic) to LR
+Example: showing the dB level (-2) of channel 1 (Mic) to LR
 
 Mic\n$(SQ:level_64_0) dB
 
-the button show on display:
+and the button shows:
 
      Mic
     -2 dB
 
-On same button, if you want, you can attach a Mute function for channel 1.
+You can put a Mute for channel 1 on the same button too, if you fancy.
 
 ### Last dB value
 
-This option set at the release action of a Fader Level allows you to return to the last dB value level of that fader.
-Example: If the fader level was +2 dB and you want to momentarily set it to -20 dB, set the Press / On action fader level option to "-20 dB", then the Release / Off action of the fader level option to "Last dB value". When the button is pressed the level drops to -20 dB and when the button is released the level returns to +2 dB.
+Put this on the release action of a Fader Level and the fader goes back to whatever it was before.
+
+Example: the fader's at +2 dB and you want to dip it to -20 dB just while the button's held. Set the Press / On fader level to "-20 dB" and the Release / Off fader level to "Last dB value". Press: down to -20 dB. Let go: back to +2 dB.
 
 ### Fading
 
-This option available on any fader level allow you to reach set dB fader level using fading in/out mode. The speed of the fader route is selectable between 1 and 3 seconds.
+Any fader level can fade to its target instead of jumping. Pick a fade time between 1 and 3 seconds.
 
 ### Pan display level
 
-When configuring a button with one of the Pan functions appear an only read option that shows name of variable to use on button text to show up value of Pan/Balance. After select option for input and destination you need to press configuring button once to refresh variable value before use it.
+When you set up a button with one of the Pan actions, you'll see a read-only option showing the variable name to use in the button text for the Pan/Balance value. Once you've picked the input and destination, press the button once to refresh the value before you use it.
 
 ## Presets:
 
 ### Talkback
 
-This macro preset simulate the native function talkback of SQ, but it works with "channel assign to mix" function in console routing screen. With this preset you'll be able to talk to one specific AUX channels by pressing a button. This preset works with talkback input channel you set up on instance configuration. Initially, you have to remove the talkback input channel from mix assign on the console.
+This preset copies the SQ's own talkback, but does it with "channel assign to mix" on the desk's routing screen. Press a button and you're talking to one particular aux. It uses the talkback input channel you set on the connection page. One thing first: take that talkback channel out of the mix assigns on the desk.
 
 ### Psst. This one's got mates. 🍹
 

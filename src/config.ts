@@ -88,6 +88,7 @@ function createDefaultTalkbackChannelOption(): SomeCompanionConfigField {
 		label: 'Default talkback input channel',
 		id: TalkbackChannelOptionId,
 		width: 6,
+		tooltip: 'The input your talkback mic is plugged into. The talkback presets use this one.',
 		default: 0,
 		choices: DefaultTalkbackInputChannelChoices,
 		minChoicesForSearch: 0,
@@ -112,22 +113,24 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			type: 'static-text',
 			id: 'info',
 			width: 12,
-			label: 'Information',
-			value: 'This module is for Allen & Heath SQ series mixing consoles.',
+			label: 'Hello there',
+			value: 'This one talks to Allen & Heath SQ series mixing desks (SQ5, SQ6 and SQ7). Fill in the bits below and we\'re off.',
 		},
 		{
 			type: 'textinput',
 			id: 'host',
 			label: 'Target IP',
 			width: 6,
+			tooltip: 'Where the desk lives on the network. Its IP address, basically. It needs to be on the same network as Companion.',
 			default: '192.168.0.5',
 			regex: Regex.IP,
 		},
 		{
 			type: 'dropdown',
 			id: 'model',
-			label: 'Console Type',
+			label: 'Console type',
 			width: 6,
+			tooltip: 'Which SQ you\'ve got, so the lists show the right channels, mixes and so on.',
 			default: DefaultModel,
 			choices: [
 				{ id: 'SQ5', label: 'SQ 5' },
@@ -138,8 +141,9 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 		{
 			type: 'dropdown',
 			id: FaderLawOptionId,
-			label: 'NRPN Fader Law',
+			label: 'NRPN fader law',
 			width: 6,
+			tooltip: 'Must match the fader law in the desk\'s MIDI settings. Important: get it wrong and every level will be off.',
 			default: 'LinearTaper',
 			choices: [
 				{ id: 'LinearTaper', label: 'Linear Taper' },
@@ -152,6 +156,7 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			id: MidiChannelOptionId,
 			label: 'MIDI channel',
 			width: 6,
+			tooltip: 'Must match the MIDI channel set on the desk (1 to 16). Important: if they don\'t agree, nothing gets through.',
 			min: 1,
 			max: 16,
 			default: 1,
@@ -161,6 +166,7 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			id: RetrieveStatusOptionId,
 			label: 'Retrieve console status',
 			width: 6,
+			tooltip: 'When I ask the desk for its mutes, levels and so on. Fully: the lot, straight away (keeps the desk busy longest). Delayed: a short wait, then spread over a few seconds. Not at startup: only as each thing is needed.',
 			default: 'full',
 			choices: [
 				{ id: 'full', label: 'Fully at startup' },
@@ -171,8 +177,9 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 		{
 			type: 'checkbox',
 			id: 'verbose',
-			label: 'Enable Verbose Logging',
+			label: 'Verbose logging',
 			width: 12,
+			tooltip: 'Writes everything to the log. Chatty, but handy when something\'s being odd.',
 			default: false,
 		},
 		{
