@@ -198,3 +198,7 @@ When configuring a button with one of the Pan functions appear an only read opti
 ### Talkback
 
 This macro preset simulate the native function talkback of SQ, but it works with "channel assign to mix" function in console routing screen. With this preset you'll be able to talk to one specific AUX channels by pressing a button. This preset works with talkback input channel you set up on instance configuration. Initially, you have to remove the talkback input channel from mix assign on the console.
+
+### Psst. This one's got mates. 🍹
+
+This tweaked SQ module is part of a little crew of Companion modules: some brand new, some old favourites given a good tweak. Want to know who else is in the crew, or grab the freshest version of each one? It's all here: [github.com/nisted/companion-modules](https://github.com/nisted/companion-modules)

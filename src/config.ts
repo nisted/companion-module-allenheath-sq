@@ -175,6 +175,13 @@ export function GetConfigFields(): SomeCompanionConfigField[] {
 			width: 12,
 			default: false,
 		},
+		{
+			type: 'static-text',
+			id: 'crew',
+			width: 12,
+			label: "Psst. This one's got mates. 🍹",
+			value: 'This tweaked SQ module is part of a little crew of Companion modules: some brand new, some old favourites given a good tweak. Want to know who else is in the crew, or grab the freshest version of each one? It\'s all here: <a href="https://github.com/nisted/companion-modules" target="_blank">github.com/nisted/companion-modules</a>',
+		},
 	]
 }
 
