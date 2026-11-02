@@ -23,6 +23,7 @@ Hello. This one runs your Allen & Heath SQ desk from Companion.
 - Current Pan level display variables
 - Talkback macro
 - Scene step increment
+- Intech Grid fader control with pickup, plus two LED feedbacks (see "Grid additions" below)
 
 ## What's changed, version by version
 
@@ -134,9 +135,7 @@ New in v.1.3.9
 
 Built from the "SQ Midi Protocol Issue 3 - Firmware v. 1.5.0 or later" manual, every control in it.
 
-Last update (d/m/y): 05/10/2021
-
-Current version: 1.3.9
+Current version: 3.1.1-grid.7
 
 ## Setting it up:
 
@@ -198,6 +197,92 @@ Any fader level can fade to its target instead of jumping. Pick a fade time betw
 ### Pan display level
 
 When you set up a button with one of the Pan actions, you'll see a read-only option showing the variable name to use in the button text for the Pan/Balance value. Once you've picked the input and destination, press the button once to refresh the value before you use it.
+
+## Grid additions
+
+This version has a few extras on top of the official module, so a hardware fader (an Intech Grid fader, say) can drive SQ levels without any nasty jumps. Three things: one action, two feedbacks.
+
+### Fader channel level to mix (from value/variable)
+
+Sets an input channel's level in a mix (or LR) from a number or a variable, rather than from a list. Point it at a Grid fader's value and the desk follows the fader.
+
+Options:
+
+- **Input channel**: the channel number as on the desk, e.g. `16` (`CH 16` works too). Default `1`. Can be a variable, e.g. `$(custom:grid_ch)`.
+- **Mix**: `LR` for the main mix, or an aux/mix number, e.g. `3` (`Mix 3` or `Aux 3` work too). Default `LR`. Can be a variable, e.g. `$(custom:grid_mix)`.
+- **Value**: the number to set. Usually a variable. Blank by default. If it isn't a number, I ignore it and say so in the log.
+- **Value is**: how to read the value. Default **Fader position 0-127 (e.g. Grid fader)**.
+  - *Fader position 0-127*: follows the SQ's own fader taper, so the hardware fader and the desk fader line up. 0 is -inf, 127 is the top. Anything outside 0 to 127 gets clamped, and fractions are rounded.
+  - *Level in dB (-inf, or -90 to +10)*: a level in dB. `-inf`, or anything at -90 or below, is -inf; anything over +10 is +10.
+- **Pickup mode**: tick box, off by default. Fader positions only (it's hidden when "Value is" is set to dB). With it on, the fader doesn't touch the desk until it's caught up with the desk's current level. More on that below.
+
+With pickup mode on, four more options appear. Each takes a number or a variable; leave one blank (or put in something that isn't a number) and it uses the default.
+
+- **Catch band (± fader steps, of 127)**: how close to the desk level counts as caught. Default `3`. 0 to 64.
+- **Dwell time (ms)**: how long the fader has to stay in the catch band before it takes over. Default `1000`. 0 to 10000.
+- **Release band (± fader steps, of 127)**: once latched, only a desk-side move bigger than this lets go (the fader itself never does). Default `6`. 0 to 127, and `127` means never let go.
+- **Release time (ms)**: how long the desk has to stay outside the release band before it lets go. Default `0` (straight away). 0 to 60000.
+
+A bad channel or mix (say, a variable that's empty) does nothing, and I put a warning in the log, once per bad combination.
+
+### How pickup works
+
+Three stages, a bit like catching a bus:
+
+1. **Waiting**: the fader isn't near the desk level. Nothing is sent to the desk.
+2. **Catching**: the fader is inside the catch band around the desk level. Still nothing sent. Stay there for the dwell time and it latches. Leave the band before then (a quick sweep straight through, for instance) and it goes back to waiting.
+3. **Tracking**: latched. The level follows the fader from where it is, and stays latched whatever the fader does.
+
+It only lets go when the desk is moved from somewhere else: the desk surface, another controller, a scene recall. That's when the desk level ends up further than the release band from what the fader sent in the last second and a half (so the SQ's own replies to the fader don't count), and stays there for the release time. Then it's back to waiting.
+
+If the desk hasn't reported that level yet, there's nothing to compare against, so the fader just tracks.
+
+### Setting it up with an Intech Grid fader
+
+1. Make a trigger that fires when the Grid fader's value variable changes (for example `custom:grid_fader_1_midi_value`).
+2. Give it the **Fader channel level to mix (from value/variable)** action.
+3. Set **Input channel** and **Mix** to the channel and mix you want the fader on.
+4. Put the same variable in **Value**, e.g. `$(custom:grid_fader_1_midi_value)`, and leave **Value is** on *Fader position 0-127*.
+5. Tick **Pickup mode** and tweak the bands and times if the defaults don't suit.
+6. For the LED, add the **Grid fader pickup LED** feedback (below) with the same channel, mix and fader value variable.
+
+Screenshots of example triggers coming soon.
+
+### Grid fader pickup LED
+
+A background colour that shows where a pickup fader is up to. It reads the bands the action last used for that channel and mix, so the two always agree.
+
+- **Input channel**, **Mix**: same as the action. Defaults `1` and `LR`.
+- **Fader value**: the fader's value, same as the action's Value. Blank by default.
+- **Below desk level: colour**: while the fader is below the desk level. Default `#ff0000` (red).
+- **Below desk level: flash**: default on.
+- **Above desk level: colour**: while the fader is above the desk level. Default `#ff0000` (red).
+- **Above desk level: flash**: default off.
+- **Catching: colour**: while the fader is in the catch band, before it latches. Default `#00ff00` (green).
+- **Tracking: colour**: once latched. Brightness follows the fader: off at 0, full at 127. Default `#ffffff` (white).
+- **Flash speed (ms per on/off)**: default `250`. 50 to 5000. When it flashes, the "off" half is black.
+
+So, out of the box: flashing red means push the fader up, steady red means pull it down, green means you've nearly got it (hold still), and white means it's yours, getting dimmer as you pull it down.
+
+Colours can be typed as `#ff0000`, `ff0000` or `255,0,0`, or come from a variable.
+
+### Level at target LED
+
+A background colour while a channel's level on the desk is within a band either side of a target dB. Handy for "it's at its mark" lights. One target per feedback: add it a few times for a few targets, and Companion's feedback order decides which one wins.
+
+- **Input channel**, **Mix**: same as the action. Defaults `1` and `LR`.
+- **Target (dB, or -inf)**: default `0`. -90 to +10. `-inf` counts as -90.
+- **Band (± dB either side of the target)**: default `0.5`.
+- **Colour**: default `#0000ff` (blue). `#0000ff`, `0,0,255`, or a variable.
+- **Flash**: default off.
+- **Flash speed (ms per on/off)**: default `250`. 50 to 5000.
+- **Flash off colour (blank = show what is underneath)**: blank by default, so the flash shows whatever the button would show without it.
+
+It only lights once the desk has reported that level.
+
+### Upgrading from an earlier Grid version
+
+Earlier Grid versions picked the channel and mix from drop-downs. Those are moved into the new text boxes for you when you update, so your buttons and triggers keep working.
 
 ## Presets:
 
