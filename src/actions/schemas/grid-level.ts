@@ -1,5 +1,5 @@
 import type { Equal, Expect } from 'type-testing'
-import { LevelSetSinkOptionId, LevelSetSourceOptionId } from './level.js'
+import type { LevelSetSinkOptionId, LevelSetSourceOptionId } from './level.js'
 import type { LR } from '../../types.js'
 
 /**

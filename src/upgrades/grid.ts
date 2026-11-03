@@ -40,6 +40,11 @@ const Grid7MixOptionId = 'mix'
 const GridLevelActionIds: readonly string[] = Object.values(GridLevelActionId)
 const GridFeedbackIds: readonly string[] = Object.values(GridFeedbackId)
 
+/** An old option value as text, as grid.7's upgrade read it */
+function jsonAsText(value: JsonValue): string {
+	return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
 /**
  * grid.7's upgrade, unchanged in effect: earlier Grid versions picked the
  * channel/mix from zero-based dropdowns ('input'/'assign', LR as 'lr'),
@@ -49,8 +54,8 @@ const GridFeedbackIds: readonly string[] = Object.values(GridFeedbackId)
 function tryMoveGridChannelMixToText(options: OldCompanionMigrationAction['options']): boolean {
 	if (options[Grid7ChannelOptionId] !== undefined) return false
 	if (options.useVars === true && options.inputVar !== undefined) {
-		options[Grid7ChannelOptionId] = String(options.inputVar)
-		options[Grid7MixOptionId] = String(options.mixVar ?? 'LR')
+		options[Grid7ChannelOptionId] = jsonAsText(options.inputVar)
+		options[Grid7MixOptionId] = jsonAsText(options.mixVar ?? 'LR')
 	} else {
 		const input = Number(options.input ?? 0)
 		const assign = options.assign

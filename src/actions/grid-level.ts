@@ -57,7 +57,10 @@ export function gridInputChannelOption<Id extends string>(id: Id, model: Model):
  * The mix option for the Grid action and feedbacks: LR or a mix, from the list
  * or from an expression.  Defaults to LR, as the Grid additions always have.
  */
-export function gridMixOption<Id extends string>(id: Id, mixesAndLR: DropdownChoice[]): CompanionInputFieldDropdown<Id> {
+export function gridMixOption<Id extends string>(
+	id: Id,
+	mixesAndLR: DropdownChoice[],
+): CompanionInputFieldDropdown<Id> {
 	return {
 		...mixOrLROption('Mix', id, mixesAndLR),
 		default: LR,
@@ -131,7 +134,7 @@ function valueToLevel(raw: string, valueType: unknown): Level | null {
 /** A text option's value as trimmed text, whatever came in */
 export function optionText(value: unknown): string {
 	if (value === undefined || value === null) return ''
-	return (typeof value === 'object' ? JSON.stringify(value) : String(value as string | number | boolean)).trim()
+	return (typeof value === 'object' ? JSON.stringify(value) : String(value)).trim()
 }
 
 const PickupVisible = `$(options:${GridValueTypeOptionId}) != 'db' && $(options:${GridPickupOptionId})`
@@ -188,7 +191,8 @@ export function gridLevelActions(
 					id: GridValueOptionId,
 					default: '',
 					useVariables: true,
-					tooltip: "The number to set. Usually a variable, e.g. $(custom:grid_fader_1_midi_value). If it isn't a number, I ignore it and say so in the log.",
+					tooltip:
+						"The number to set. Usually a variable, e.g. $(custom:grid_fader_1_midi_value). If it isn't a number, I ignore it and say so in the log.",
 				},
 				{
 					type: 'dropdown',
