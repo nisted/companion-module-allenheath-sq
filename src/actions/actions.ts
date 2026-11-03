@@ -1,6 +1,7 @@
 import type { CompanionActionDefinitions } from '@companion-module/base'
 import { assignActions } from './assign.js'
 import type { Choices } from '../choices.js'
+import { connectionActions } from './connection.js'
 import { gridLevelActions } from './grid-level.js'
 import type { sqInstance } from '../instance.js'
 import { levelActions } from './level.js'
@@ -51,5 +52,6 @@ export function getActions(
 		...outputLevelActions(instance, mixer),
 		...outputPanBalanceActions(instance, mixer),
 		...sceneActions(instance, mixer),
+		...connectionActions(instance),
 	}
 }
