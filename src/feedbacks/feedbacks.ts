@@ -1,5 +1,6 @@
 import type { CompanionFeedbackDefinitions } from '@companion-module/base'
 import type { Choices } from '../choices.js'
+import { gridFeedbacks } from './grid.js'
 import { inputChannelLevelInMixFeedbacks } from './inputchannel-level-in-mix.js'
 import type { sqInstance } from '../instance.js'
 import type { SQFeedbacks } from './manifest.js'
@@ -14,5 +15,6 @@ export function getFeedbacks(
 	return {
 		...muteFeedbacks(mixer),
 		...inputChannelLevelInMixFeedbacks(instance, mixer, choices.mixesAndLR),
+		...gridFeedbacks(instance, mixer, choices.mixesAndLR),
 	}
 }

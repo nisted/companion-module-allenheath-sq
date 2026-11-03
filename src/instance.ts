@@ -14,6 +14,7 @@ import { getFeedbacks } from './feedbacks/feedbacks.js'
 import type { SQManifest } from './manifest.js'
 import { Mixer } from './mixer/mixer.js'
 import type { Model } from './mixer/model.js'
+import { destroyPickup } from './pickup.js'
 import { getPresetDefinitions } from './presets/definitions.js'
 import { getPresetsStructure } from './presets/structure.js'
 import { CurrentSceneId, SceneRecalledTriggerId, type SQVariables } from './variables/manifest.js'
@@ -36,6 +37,7 @@ export class sqInstance extends InstanceBase<SQManifest> {
 	#lastLabel: string | null = null
 
 	override async destroy(): Promise<void> {
+		destroyPickup(this)
 		if (this.mixer !== null) {
 			this.mixer.stop('Module connection destroyed')
 			this.mixer = null
