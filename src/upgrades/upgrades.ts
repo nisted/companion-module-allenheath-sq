@@ -18,17 +18,21 @@ import {
 	tryRemoveUnnecessaryLabelInConfig,
 	tryRenameVariousConfigIds,
 } from '../config.js'
-import { ExpressionlessActionUpdater, ExpressionlessFeedbackUpdater } from './expressionless-updaters.js'
+import {
+	ExpressionlessActionAndFeedbackUpdater,
+	ExpressionlessActionUpdater,
+	ExpressionlessFeedbackUpdater,
+} from './expressionless-updaters.js'
 import { tryMakeMuteFeedbackItemOneIndexed, tryRemoveChannelFromMuteLRFeedback } from '../feedbacks/mute.js'
+import {
+	tryMoveGridActionChannelMixToText,
+	tryMoveGridFeedbackChannelMixToText,
+	tryUpgradeGridActionTo4,
+	tryUpgradeGridFeedbackTo4,
+} from './grid.js'
 import { tryUpdateAllLRMixEncodings } from '../mixer/lr.js'
 import type { UpgradeScript } from './types.js'
 import { ActionUpdater, ConfigUpdater, FeedbackUpdater } from './updaters.js'
-
-// There are no expression-aware upgrade scripts yet, so these are presently
-// naturally unused.  Add forcible uses of them so that `yarn knip` doesn't
-// require they be deleted and readded later.
-void ActionUpdater
-void FeedbackUpdater
 
 export const UpgradeScripts = [
 	EmptyUpgradeScript,
@@ -45,6 +49,12 @@ export const UpgradeScripts = [
 	ExpressionlessActionUpdater(tryUpdateAllLRMixEncodings),
 	ExpressionlessActionUpdater(tryFixFXRLevelInFXSIdTypo),
 	ConfigUpdater(tryRenameVariousConfigIds),
+	// Grid additions (Nige's fork): this slot is 3.1.1-grid.7's own upgrade
+	// script, which came straight after v3.1.0's ten.  Keeping it here, as a
+	// single script, means connections coming from grid.7 (already at this
+	// index) still run every one of 4.0's scripts below.  Connections coming
+	// from the official v3.1.0 run it too, and it does nothing for them.
+	ExpressionlessActionAndFeedbackUpdater(tryMoveGridActionChannelMixToText, tryMoveGridFeedbackChannelMixToText),
 	// Meticulously update every formerly zero-based option value to one-based,
 	// because a great many options, in order to be selectable by expression, need
 	// to be user-understandable.  Boo-urns!
@@ -60,4 +70,10 @@ export const UpgradeScripts = [
 	// values to one-indexed.
 
 	// EXPRESSIONLESS UPDATERS ARE FORBIDDEN AFTER THIS POINT
+
+	// Grid additions: grid.7's channel/mix text boxes become 4.0's channel
+	// number and mix dropdown (expressions where there were variables), and
+	// its number text boxes become number fields.
+	ActionUpdater(tryUpgradeGridActionTo4),
+	FeedbackUpdater(tryUpgradeGridFeedbackTo4),
 ] satisfies UpgradeScript[]

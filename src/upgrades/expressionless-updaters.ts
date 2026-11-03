@@ -246,3 +246,27 @@ export function ExpressionlessFeedbackUpdater(tryUpdate: TryUpdateExpressionless
 		}
 	}
 }
+
+/**
+ * An expressionless updater for actions and feedbacks together, in a single
+ * upgrade script.  (The Grid additions' first upgrade script, from
+ * 3.1.1-grid.N, did both in one script, and its slot in the upgrade-script
+ * list has to stay a single script.)
+ */
+export function ExpressionlessActionAndFeedbackUpdater(
+	tryUpdateAction: TryUpdateExpressionlessAction,
+	tryUpdateFeedback: TryUpdateExpressionlessFeedback,
+): UpgradeScript {
+	return (_context, props) => {
+		return {
+			updatedActions: props.actions.filter((action) => {
+				return tryUpdateAction(proxyNewMigrationActionToOld(action))
+			}),
+			updatedFeedbacks: props.feedbacks.filter((feedback) => {
+				return tryUpdateFeedback(proxyNewMigrationFeedbackToOld(feedback))
+			}),
+			updatedConfig: null,
+			updatedSecrets: null,
+		}
+	}
+}
