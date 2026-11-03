@@ -3,6 +3,7 @@ import type {
 	CompanionInputFieldDropdown,
 	CompanionInputFieldNumber,
 	DropdownChoice,
+	JsonValue,
 } from '@companion-module/base'
 import { mixOrLROption } from '../choices.js'
 import { faderNumber } from '../fader-number.js'
@@ -81,8 +82,8 @@ const reportedBad = new Set<string>()
 export function gridLevelNRPN(
 	instance: sqInstance,
 	model: Model,
-	channelOption: unknown,
-	mixOption: unknown,
+	channelOption: JsonValue | undefined,
+	mixOption: JsonValue | undefined,
 ): NRPN<'level'> | null {
 	const channelText = optionText(channelOption).replace(/^ch\s*/i, '')
 	const channel = channelText === '' ? NaN : Number(channelText)
@@ -132,7 +133,7 @@ function valueToLevel(raw: string, valueType: unknown): Level | null {
 }
 
 /** A text option's value as trimmed text, whatever came in */
-export function optionText(value: unknown): string {
+export function optionText(value: JsonValue | undefined): string {
 	if (value === undefined || value === null) return ''
 	return (typeof value === 'object' ? JSON.stringify(value) : String(value)).trim()
 }
