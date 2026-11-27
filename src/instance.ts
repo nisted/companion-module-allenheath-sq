@@ -1,19 +1,17 @@
 import type { Equal, Expect } from 'type-testing'
-import { type CompanionOptionValues, InstanceBase, type SomeCompanionConfigField } from '@companion-module/base'
+import { InstanceBase, type SomeCompanionConfigField } from '@companion-module/base'
 import { getActions } from './actions/actions.js'
-import { optionText } from './actions/grid-level.js'
 import { Choices } from './choices.js'
 import {
-	applyByActionTicks,
+	applyActionSettings,
+	applyConnectionPage,
 	canUpdateConfigWithoutRestarting,
-	ConnectionFieldLabels,
+	type ConnectionFieldId,
 	GetConfigFields,
+	getGridSlots,
 	getHost,
 	noConnectionConfig,
-	parseConnectionSetting,
-	type RawConfig,
 	type SQConfig,
-	tickedConnectionFields,
 	validateConfig,
 } from './config.js'
 import { getFeedbacks } from './feedbacks/feedbacks.js'
@@ -23,6 +21,7 @@ import type { Model } from './mixer/model.js'
 import { destroyPickup } from './pickup.js'
 import { getPresetDefinitions } from './presets/definitions.js'
 import { getPresetsStructure } from './presets/structure.js'
+import { Rebel } from './rebel.js'
 import { CurrentSceneId, SceneRecalledTriggerId, type SQVariables } from './variables/manifest.js'
 import { getVariables } from './variables/variables.js'
 
@@ -36,6 +35,11 @@ export class sqInstance extends InstanceBase<SQManifest> {
 	 */
 	mixer: Mixer | null = null
 
+	/** SQ Rebel's additions: the A&H remote link and the Grid slots */
+	rebel: Rebel | null = null
+
+	#recording = false
+
 	/**
 	 * The last label specified for this instance, or `null` if there wasn't a
 	 * last label.
@@ -44,6 +48,8 @@ export class sqInstance extends InstanceBase<SQManifest> {
 
 	override async destroy(): Promise<void> {
 		destroyPickup(this)
+		this.rebel?.stop()
+		this.rebel = null
 		if (this.mixer !== null) {
 			this.mixer.stop('Module connection destroyed')
 			this.mixer = null
@@ -51,10 +57,8 @@ export class sqInstance extends InstanceBase<SQManifest> {
 	}
 
 	override async init(config: SQConfig, _isFirstInit: boolean): Promise<void> {
-		// The "Can be set by the action" ticks are taken as saved: nothing is
-		// being handed over to the action or back at startup.
 		validateConfig(config)
-		void this.#useConfig(config, false)
+		void this.#useConfig(config)
 	}
 
 	override getConfigFields(): SomeCompanionConfigField[] {
@@ -109,9 +113,38 @@ export class sqInstance extends InstanceBase<SQManifest> {
 		}
 	}
 
+	/** An input channel's name from the desk, if the A&H remote link has it */
+	inputChannelName(channel: number): string | undefined {
+		return this.rebel?.inputChannelName(channel)
+	}
+
+	/** LR's name from the desk, if the A&H remote link has it */
+	lrName(): string | undefined {
+		return this.rebel?.lrName()
+	}
+
+	/** A mix's name from the desk, if known */
+	mixName(mix: number): string | undefined {
+		return this.rebel?.mixName(mix)
+	}
+
+	/** Whether Companion's action recorder is running */
+	get isRecording(): boolean {
+		return this.#recording
+	}
+
+	override handleStartStopRecordActions(isRecording: boolean): void {
+		this.#recording = isRecording
+		this.rebel?.setRecording(isRecording)
+		if (isRecording) {
+			this.rebel?.primeRecorder()
+		}
+	}
+
 	/** Set variable definitions for this instance. */
 	initVariableDefinitions(mixer: Mixer): void {
-		this.setVariableDefinitions(getVariables(mixer.model))
+		this.setVariableDefinitions({ ...getVariables(mixer.model), ...this.rebel?.variableDefinitions() })
+		this.rebel?.publishAll()
 
 		this.setVariableValues({
 			[SceneRecalledTriggerId]: mixer.sceneRecalledTrigger,
@@ -124,90 +157,47 @@ export class sqInstance extends InstanceBase<SQManifest> {
 	}
 
 	#updatePresetDefinitions(model: Model): void {
-		this.setPresetDefinitions(getPresetsStructure(model), getPresetDefinitions(this, model))
+		this.setPresetDefinitions(getPresetsStructure(model, getGridSlots(this.config)), getPresetDefinitions(this, model))
 	}
 
 	/**
-	 * A config saved from the connection page.  The "Can be set by the action"
-	 * ticks decide what of it is used: see `applyByActionTicks`.
+	 * A config saved from the connection page.  Fields the 'Set connection
+	 * settings' action has set keep the action's value unless Change back is
+	 * ticked: see `applyConnectionPage`.
 	 */
 	override async configUpdated(newConfig: SQConfig): Promise<void> {
 		validateConfig(newConfig)
-		const { ticksChanged, changed } = applyByActionTicks(this.config, newConfig)
-		if (changed) {
+		if (applyConnectionPage(this.config, newConfig)) {
 			this.saveConfig(newConfig)
 		}
-		await this.#useConfig(newConfig, ticksChanged)
+		await this.#useConfig(newConfig)
 	}
 
 	/**
-	 * Run 'Connection: set settings': put the values given into the connection
-	 * fields ticked "Can be set by the action", then use them.  Blank values
-	 * are left as they are, and values that don't make sense are skipped with
-	 * a warning in the log.  Nothing is saved, and the connection isn't
-	 * touched, unless something actually changed.
+	 * Run 'Set connection settings': any field, blank = leave alone, values
+	 * that don't fit are skipped with a warning in the log.  Nothing is saved,
+	 * and the connection isn't touched, unless something actually changed.
 	 */
-	async setConnectionSettings(options: CompanionOptionValues): Promise<void> {
-		const what = 'Connection: set settings'
-		const ticked = tickedConnectionFields(this.config)
-		if (ticked.length === 0) {
-			this.log(
-				'info',
-				`${what}: nothing's ticked "Can be set by the action" on the connection page yet, so there's nothing for me to set.`,
-			)
+	async setConnectionSettings(values: Partial<Record<ConnectionFieldId, string>>): Promise<void> {
+		const next = applyActionSettings(this.config, values, (message) => {
+			this.log('warn', message)
+		})
+		if (next === null) {
 			return
 		}
-
-		const next: RawConfig = { ...this.config }
-		let changed = false
-		for (const field of ticked) {
-			const text = optionText(options[field])
-			if (text === '') {
-				continue
-			}
-
-			const parsed = parseConnectionSetting(field, text)
-			if (!parsed.ok) {
-				this.log(
-					'warn',
-					`${what}: "${ConnectionFieldLabels[field]}" ${parsed.why}, and "${text}" isn't that. I've left it as it was.`,
-				)
-				continue
-			}
-
-			if (next[field] !== parsed.value) {
-				next[field] = parsed.value
-				changed = true
-			}
-		}
-
-		if (!changed) {
-			return
-		}
-
-		validateConfig(next)
 		this.saveConfig(next)
-		await this.#useConfig(next, false)
+		await this.#useConfig(next)
 	}
 
 	/**
 	 * Start using a config, restarting the mixer connection only if it has to.
-	 *
-	 * @param redefineActions
-	 *   Whether the action definitions must be set again even if the mixer
-	 *   connection isn't restarted (because the "Can be set by the action"
-	 *   ticks changed the 'Connection: set settings' action's options).
 	 */
-	async #useConfig(newConfig: SQConfig, redefineActions: boolean): Promise<void> {
+	async #useConfig(newConfig: SQConfig): Promise<void> {
 		const oldConfig = this.config
 		this.config = newConfig
 
 		if (this.mixer !== null) {
 			if (canUpdateConfigWithoutRestarting(oldConfig, newConfig)) {
-				if (redefineActions) {
-					this.setActionDefinitions(getActions(this, this.mixer, new Choices(this.mixer.model)))
-				}
-
 				const label = this.label
 				if (label !== this.#lastLabel) {
 					// The instance label might be altered just before
@@ -223,10 +213,21 @@ export class sqInstance extends InstanceBase<SQManifest> {
 			}
 
 			this.mixer.stop('Mixer connection restarting for configuration update...')
+			this.rebel?.stop()
+			this.rebel = null
 		}
 
 		const mixer = new Mixer(this)
 		this.mixer = mixer
+
+		const rebel = new Rebel(this, mixer.model)
+		this.rebel = rebel
+		rebel.onNamesChanged = () => {
+			if (this.mixer !== mixer) return
+			const current = new Choices(mixer.model)
+			this.setActionDefinitions(getActions(this, mixer, current))
+			this.setFeedbackDefinitions(getFeedbacks(this, mixer, current))
+		}
 
 		const choices = new Choices(mixer.model)
 
@@ -241,5 +242,7 @@ export class sqInstance extends InstanceBase<SQManifest> {
 		this.checkAllFeedbacks() // XXX optimize?
 
 		mixer.start(getHost(newConfig))
+		rebel.start(getHost(newConfig))
+		rebel.setRecording(this.#recording)
 	}
 }

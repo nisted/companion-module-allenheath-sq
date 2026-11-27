@@ -11,6 +11,7 @@ import { muteActions } from './mute.js'
 import { outputLevelActions } from './output/level.js'
 import { outputPanBalanceActions } from './output/pan-balance.js'
 import { panBalanceActions } from './pan-balance.js'
+import { rebelActions } from './rebel.js'
 import { sceneActions } from './scene.js'
 import { softKeyActions } from './softkey.js'
 
@@ -53,5 +54,6 @@ export function getActions(
 		...outputPanBalanceActions(instance, mixer),
 		...sceneActions(instance, mixer),
 		...connectionActions(instance),
+		...rebelActions(instance),
 	}
 }

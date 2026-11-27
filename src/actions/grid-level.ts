@@ -5,9 +5,8 @@ import type {
 	DropdownChoice,
 	JsonValue,
 } from '@companion-module/base'
-import { mixOrLROption } from '../choices.js'
-import { faderNumber } from '../fader-number.js'
 import type { sqInstance } from '../instance.js'
+import { parseNumber } from '../led-look.js'
 import type { Level } from '../mixer/level.js'
 import type { Mixer } from '../mixer/mixer.js'
 import type { Model } from '../mixer/model.js'
@@ -20,7 +19,6 @@ import {
 	DEFAULT_RELEASE_MS,
 	levelKey,
 	NEVER_RELEASE_BAND,
-	parseNumber,
 	pickupFor,
 	positionToLevel,
 } from '../pickup.js'
@@ -39,36 +37,69 @@ import { LevelSetSinkOptionId, LevelSetSourceOptionId } from './schemas/level.js
 import { LR, LRStrip } from '../types.js'
 import { zeroIndexedNumber } from '../utils/indexed.js'
 
+/** A channel's label for lists: `CH 16`, or `CH 16 - Kick` when the desk has given it a name */
+export function channelChoiceLabel(instance: sqInstance, channel: number): string {
+	const name = instance.inputChannelName(channel)
+	return name === undefined ? `CH ${channel}` : `CH ${channel} - ${name}`
+}
+
 /**
- * The input channel option for the Grid action and feedbacks: a number that
- * can also be an expression (a variable, say).
+ * The input channel option for the Grid action and feedbacks: a list (with
+ * the desk's names when the A&H remote link has them) that also takes a typed
+ * channel number or an expression (a variable, say).
  */
-export function gridInputChannelOption<Id extends string>(id: Id, model: Model): CompanionInputFieldNumber<Id> {
+export function gridInputChannelOption<Id extends string>(
+	id: Id,
+	instance: sqInstance,
+	model: Model,
+): CompanionInputFieldDropdown<Id> {
+	const choices: DropdownChoice[] = []
+	for (let channel = 1; channel <= model.inputOutputCounts.inputChannel; channel++) {
+		choices.push({ id: channel, label: channelChoiceLabel(instance, channel) })
+	}
 	return {
-		...faderNumber('Input channel', id, model.inputOutputCounts, 'inputChannel'),
+		type: 'dropdown',
+		label: 'Input channel',
+		id,
+		default: 1,
+		choices,
+		minChoicesForSearch: 0,
+		allowCustom: true,
 		// A bad channel does nothing and says so in the log (once), rather than
-		// Companion skipping it quietly.  "CH 16" from a variable works too.
+		// Companion skipping it quietly.  "CH 16" typed or from a variable works too.
 		allowInvalidValues: true,
-		tooltip:
-			'The input channel number, as on the desk. Want a variable to pick it? Flip the field to an expression, e.g. $(custom:grid_ch).',
+		tooltip: 'Pick from the list, type a channel number, or flip the field to an expression, e.g. $(custom:grid_ch).',
+		expressionDescription: `An input channel number, 1 to ${model.inputOutputCounts.inputChannel} (CH 16 works too).`,
 	}
 }
 
 /**
- * The mix option for the Grid action and feedbacks: LR or a mix, from the list
- * or from an expression.  Defaults to LR, as the Grid additions always have.
+ * The mix option for the Grid action and feedbacks: LR or a mix, from the
+ * list, typed, or from an expression.  Defaults to LR, as the Grid additions
+ * always have.
  */
 export function gridMixOption<Id extends string>(
 	id: Id,
+	instance: sqInstance,
 	mixesAndLR: DropdownChoice[],
 ): CompanionInputFieldDropdown<Id> {
+	const choices = mixesAndLR.map((choice): DropdownChoice => {
+		const name = choice.id === LR ? instance.lrName() : instance.mixName(Number(choice.id))
+		return name === undefined ? choice : { id: choice.id, label: `${choice.label} - ${name}` }
+	})
 	return {
-		...mixOrLROption('Mix', id, mixesAndLR),
+		type: 'dropdown',
+		label: 'Mix',
+		id,
 		default: LR,
-		// As for the channel: "lr", "Mix 3" and "Aux 3" from a variable work too.
+		choices,
+		minChoicesForSearch: 0,
+		allowCustom: true,
+		// As for the channel: "lr", "Mix 3" and "Aux 3" typed or from a variable work too.
 		allowInvalidValues: true,
 		tooltip:
-			'LR for the main mix, or a mix number. Want a variable to pick it? Flip the field to an expression, e.g. $(custom:grid_mix) (it needs to give LR or a number; Mix 3 works too).',
+			'Pick from the list, type LR or a mix number, or flip the field to an expression, e.g. $(custom:grid_mix).',
+		expressionDescription: `LR, or a mix number 1 to ${mixesAndLR.length - 1} (Mix 3 and Aux 3 work too).`,
 	}
 }
 
@@ -96,7 +127,7 @@ export function gridLevelNRPN(
 	const mixOk = isLR || (Number.isInteger(mix) && 1 <= mix && mix <= counts.mix)
 
 	if (!channelOk || !mixOk) {
-		const msg = `Input channel "${optionText(channelOption)}" / mix "${optionText(mixOption)}" doesn't add up (channel: 1 to ${counts.inputChannel}; mix: LR or 1 to ${counts.mix}), so I've left it alone`
+		const msg = `Input channel "${optionText(channelOption)}" / mix "${optionText(mixOption)}" isn't valid (channel: 1 to ${counts.inputChannel}; mix: LR or 1 to ${counts.mix}), so it was left alone`
 		if (!reportedBad.has(msg)) {
 			reportedBad.add(msg)
 			instance.log('warn', msg)
@@ -184,8 +215,8 @@ export function gridLevelActions(
 			name: 'Fader channel level to mix (from value/variable)',
 			description: 'Sets the level from a number or a variable, e.g. an Intech Grid fader value',
 			options: [
-				gridInputChannelOption(LevelSetSourceOptionId, model),
-				gridMixOption(LevelSetSinkOptionId, mixesAndLR),
+				gridInputChannelOption(LevelSetSourceOptionId, instance, model),
+				gridMixOption(LevelSetSinkOptionId, instance, mixesAndLR),
 				{
 					type: 'textinput',
 					label: 'Value',
@@ -193,7 +224,7 @@ export function gridLevelActions(
 					default: '',
 					useVariables: true,
 					tooltip:
-						"The number to set. Usually a variable, e.g. $(custom:grid_fader_1_midi_value). If it isn't a number, I ignore it and say so in the log.",
+						"The number to set. Usually a variable, e.g. $(custom:grid_fader_1_midi_value). If it isn't a number, it's ignored and logged.",
 				},
 				{
 					type: 'dropdown',
@@ -212,7 +243,7 @@ export function gridLevelActions(
 					id: GridPickupOptionId,
 					default: false,
 					tooltip:
-						"Don't touch the level until the fader sits within the catch band of the desk's current level for the dwell time, then stay latched until the desk is moved from somewhere else. A quick sweep through doesn't latch. Show what it's up to with the 'Grid fader pickup LED' feedback. Fader positions only.",
+						"Leaves the level alone until the fader sits within the catch band of the desk's level for the dwell time, then stays latched until the desk is moved from somewhere else. A quick sweep through doesn't latch. The 'Grid fader pickup LED' feedback shows where it's up to. Fader positions only.",
 					disableAutoExpression: true,
 					isVisibleExpression: `$(options:${GridValueTypeOptionId}) != 'db'`,
 				},
@@ -259,7 +290,7 @@ export function gridLevelActions(
 				const valueType = options[GridValueTypeOptionId]
 				const level = valueToLevel(raw, valueType)
 				if (level === null) {
-					instance.log('warn', `Fader value "${raw}" isn't a number, so I've ignored it`)
+					instance.log('warn', `Fader value "${raw}" isn't a number, so it was ignored`)
 					return
 				}
 

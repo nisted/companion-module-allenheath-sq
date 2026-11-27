@@ -41,6 +41,7 @@ import { panBalanceLevelToVCVF, vcvfToReadablePanBalance } from './pan-balance.j
 import { LR, LRStrip, MuteOperation, type PanBalance } from '../types.js'
 import { type OneIndexed, oneIndexedNumber, type ZeroIndexed } from '../utils/indexed.js'
 import { prettyByte, prettyBytes } from '../utils/pretty.js'
+import { DeskRecorder } from '../recorder.js'
 import { sleep, asyncSleep } from '../utils/sleep.js'
 import { CurrentSceneId, SceneRecalledTriggerId, type SQVariables } from '../variables/manifest.js'
 
@@ -322,10 +323,14 @@ export class Mixer {
 		}
 	}
 
+	/** Records desk-side changes while Companion's action recorder runs */
+	readonly recorder: DeskRecorder
+
 	/** Create a mixer for the given instance. */
 	constructor(instance: sqInstance) {
 		this.#instance = instance
 		this.model = new Model(getModelId(instance.config))
+		this.recorder = new DeskRecorder(instance, this.model)
 	}
 
 	/**
@@ -492,6 +497,7 @@ export class Mixer {
 			// so.
 			const muted = vf === 0x01
 			this.#muteStatus.set(nrpn, muted)
+			this.recorder.mute(nrpn, muted)
 
 			const { MSB, LSB } = splitNRPN(nrpn)
 			const CI: CallbackInfoType = CallbackInfo
@@ -523,6 +529,7 @@ export class Mixer {
 				},
 			)
 			this.#resolveQuery(nrpn, level)
+			this.recorder.level(nrpn, level)
 
 			if (!ost) {
 				this.lastValue[levelVariable] = level

@@ -34,8 +34,10 @@ type GridValueType = 'position' | 'db'
 type LenientNumber = number | string
 
 type GridLevelFromValueOptions = {
-	[LevelSetSourceOptionId]: number
-	[LevelSetSinkOptionId]: number | typeof LR
+	/** A channel number from the list, or typed / from an expression ('16', 'CH 16') */
+	[LevelSetSourceOptionId]: number | string
+	/** LR or a mix number from the list, or typed / from an expression ('LR', '3', 'Mix 3') */
+	[LevelSetSinkOptionId]: number | string
 	[GridValueOptionId]: string
 	[GridValueTypeOptionId]: GridValueType
 	[GridPickupOptionId]: boolean

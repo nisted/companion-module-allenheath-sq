@@ -6,6 +6,7 @@ import type { sqInstance } from '../instance.js'
 import type { SQFeedbacks } from './manifest.js'
 import type { Mixer } from '../mixer/mixer.js'
 import { muteFeedbacks } from './mute.js'
+import { rebelFeedbacks } from './rebel.js'
 
 export function getFeedbacks(
 	instance: sqInstance,
@@ -16,5 +17,6 @@ export function getFeedbacks(
 		...muteFeedbacks(mixer),
 		...inputChannelLevelInMixFeedbacks(instance, mixer, choices.mixesAndLR),
 		...gridFeedbacks(instance, mixer, choices.mixesAndLR),
+		...rebelFeedbacks(instance),
 	}
 }

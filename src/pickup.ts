@@ -16,6 +16,10 @@ import { splitNRPN } from './mixer/nrpn/nrpn.js'
  *   tracking - latched: the level follows the fader from where it is, and
  *              stays latched whatever the fader does.
  *              LED: tracking colour, brightness by fader position.
+ *   released - waiting again because the desk moved the level away while
+ *              latched (rather than never having caught).  LED: the
+ *              released-below / released-above look if it's turned on,
+ *              otherwise the usual below / above look.
  *
  * Release: only the desk being moved elsewhere (desk surface, another
  * controller, a scene recall) breaks the latch. That's when the desk level is
@@ -39,8 +43,12 @@ export const DEFAULT_RELEASE_MS = 0
 /** A release band this wide never releases */
 export const NEVER_RELEASE_BAND = 127
 
-/** How often LED feedbacks are re-checked (for flashing, and desk changes made elsewhere) */
-const TICK_MS = 125
+/** How often the ticker runs (fast enough for smooth pulses and fades) */
+const TICK_MS = 40
+/** How often LED feedbacks are re-checked when nothing is animating (desk changes made elsewhere) */
+const IDLE_CHECK_MS = 120
+/** How long after the last animated LED the ticker keeps redrawing every tick */
+const ANIMATING_HOLD_MS = 500
 /** How long sent positions count as "ours" when the SQ echoes them back */
 const ECHO_WINDOW_MS = 1500
 
@@ -77,12 +85,14 @@ interface PickupState {
 	/** When the desk first went outside the release band, if it has */
 	outsideSince: number | undefined
 	dwellTimer: NodeJS.Timeout | undefined
+	/** The desk moved the level away while latched, and it hasn't latched since */
+	released: boolean
 	settings: PickupSettings
 	/** Sends a fader position to the SQ */
 	apply: ((position: number) => void) | undefined
 }
 
-type PickupLed = 'below' | 'above' | 'catch' | 'tracking'
+export type PickupLed = 'below' | 'above' | 'catch' | 'tracking' | 'releasedBelow' | 'releasedAbove'
 
 /**
  * The level at a fader position 0-127 on the SQ's own fader (its audio taper),
@@ -101,56 +111,28 @@ function levelToPosition(level: Level): number {
 	return vc + vf / 100
 }
 
-/** A number from typed text, a variable's value or an expression's result, falling back to `fallback` */
-export function parseNumber(raw: unknown, fallback: number, min: number, max: number): number {
-	const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw.trim() : ''
-	const n = Number(text)
-	if (text === '' || Number.isNaN(n)) return fallback
-	return Math.max(min, Math.min(max, n))
-}
-
-function rgb(r: number, g: number, b: number): number {
-	return ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff)
-}
-
-/**
- * A colour from typed text or a variable's value: '#ff0000', 'ff0000',
- * '255,0,0', or a Companion colour number. Falls back to `fallback`.
- */
-export function parseColour(raw: string, fallback: number): number {
-	const text = raw.trim()
-	const hex = /^#?([0-9a-f]{6})$/i.exec(text)
-	if (hex) return parseInt(hex[1], 16)
-	const triple = /^(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})$/.exec(text)
-	if (triple) {
-		const c = (s: string) => Math.min(255, Number(s))
-		return rgb(c(triple[1]), c(triple[2]), c(triple[3]))
-	}
-	if (/^\d+$/.test(text)) return Math.min(0xffffff, Number(text))
-	return fallback
-}
-
-/** Scale a colour's brightness by `fraction` (0-1) */
-export function scaleColour(colour: number, fraction: number): number {
-	const f = Math.max(0, Math.min(1, fraction))
-	return rgb(
-		Math.round(((colour >> 16) & 0xff) * f),
-		Math.round(((colour >> 8) & 0xff) * f),
-		Math.round((colour & 0xff) * f),
-	)
-}
-
 class PickupManager {
 	readonly #instance: sqInstance
 	readonly #states = new Map<LevelKey, PickupState>()
 	readonly #tick: NodeJS.Timeout
+	#lastAnimated = 0
+	#lastCheck = 0
 
 	constructor(instance: sqInstance) {
 		this.#instance = instance
 		this.#tick = setInterval(() => {
 			for (const [key, state] of this.#states) this.#checkRelease(key, state)
-			this.#instance.checkFeedbacks(PICKUP_LED_FEEDBACK_ID, LEVEL_THRESHOLD_FEEDBACK_ID)
+			const now = Date.now()
+			if (now - this.#lastAnimated < ANIMATING_HOLD_MS || now - this.#lastCheck >= IDLE_CHECK_MS) {
+				this.#lastCheck = now
+				this.#instance.checkFeedbacks(PICKUP_LED_FEEDBACK_ID, LEVEL_THRESHOLD_FEEDBACK_ID)
+			}
 		}, TICK_MS)
+	}
+
+	/** An LED feedback is showing a moving look: keep redrawing every tick for a while */
+	noteAnimating(): void {
+		this.#lastAnimated = Date.now()
 	}
 
 	destroy(): void {
@@ -174,6 +156,7 @@ class PickupManager {
 				recentSent: [],
 				outsideSince: undefined,
 				dwellTimer: undefined,
+				released: false,
 				settings: { ...DEFAULT_SETTINGS },
 				apply: undefined,
 			}
@@ -211,6 +194,7 @@ class PickupManager {
 		state.outsideSince ??= now
 		if (now - state.outsideSince >= releaseMs) {
 			state.phase = 'waiting'
+			state.released = true
 			state.recentSent = []
 			state.outsideSince = undefined
 			this.#instance.checkFeedbacks(PICKUP_LED_FEEDBACK_ID)
@@ -276,6 +260,7 @@ class PickupManager {
 			} else {
 				// Latch, and start from where the fader is
 				state.phase = 'tracking'
+				state.released = false
 				state.recentSent = []
 				state.outsideSince = undefined
 				this.#sent(state, state.lastIn)
@@ -285,23 +270,30 @@ class PickupManager {
 		}, state.settings.dwellMs)
 	}
 
-	/** Which LED state to show for a fader currently at `incoming` */
-	ledState(key: LevelKey, incoming: number | undefined): { led: PickupLed; position: number } {
+	/**
+	 * Which LED state to show for a fader currently at `incoming`, with the
+	 * fader position and how far (fader steps) it is from the desk fader.
+	 */
+	ledState(key: LevelKey, incoming: number | undefined): { led: PickupLed; position: number; distance: number } {
 		const state = this.#states.get(key)
 		const position = Math.max(0, Math.min(127, incoming ?? state?.lastIn ?? 0))
 
-		if (state?.phase === 'tracking') return { led: 'tracking', position }
-		if (state?.phase === 'dwelling') return { led: 'catch', position }
+		if (state?.phase === 'tracking') return { led: 'tracking', position, distance: 0 }
 
 		const deskLevel = this.deskLevel(key)
+		const desk = deskLevel === undefined ? position : levelToPosition(deskLevel)
+		const distance = Math.abs(position - desk)
+
+		if (state?.phase === 'dwelling') return { led: 'catch', position, distance }
 		if (deskLevel === undefined || (incoming === undefined && state?.lastIn === undefined)) {
-			return { led: 'tracking', position }
+			return { led: 'tracking', position, distance: 0 }
 		}
 
-		const desk = levelToPosition(deskLevel)
 		const band = state?.settings.band ?? DEFAULT_BAND
-		if (Math.abs(position - desk) <= band) return { led: 'catch', position }
-		return { led: position > desk ? 'above' : 'below', position }
+		if (distance <= band) return { led: 'catch', position, distance }
+		const above = position > desk
+		if (state?.released === true) return { led: above ? 'releasedAbove' : 'releasedBelow', position, distance }
+		return { led: above ? 'above' : 'below', position, distance }
 	}
 }
 

@@ -15,6 +15,7 @@ import { tryMakeSourceSinkOptionsUserFriendly } from '../actions/user-friendly-s
 import {
 	tryEnsureLabelInConfig,
 	tryEnsureModelOptionInConfig,
+	tryMoveByActionTicksToSetFlags,
 	tryRemoveUnnecessaryLabelInConfig,
 	tryRenameVariousConfigIds,
 } from '../config.js'
@@ -31,6 +32,7 @@ import {
 	tryUpgradeGridFeedbackTo4,
 } from './grid.js'
 import { tryUpdateAllLRMixEncodings } from '../mixer/lr.js'
+import { tryFillConnectionSetOptions, tryUpgradeGridLedLooks } from './rebel.js'
 import type { UpgradeScript } from './types.js'
 import { ActionUpdater, ConfigUpdater, FeedbackUpdater } from './updaters.js'
 
@@ -76,4 +78,11 @@ export const UpgradeScripts = [
 	// its number text boxes become number fields.
 	ActionUpdater(tryUpgradeGridActionTo4),
 	FeedbackUpdater(tryUpgradeGridFeedbackTo4),
+
+	// SQ Rebel 4.0.0-rc1-grid.2: the new 'Set connection settings' pattern
+	// (ticks become "set by an action" flags; the action offers every field),
+	// and the Grid LED feedbacks' new look options.
+	ConfigUpdater(tryMoveByActionTicksToSetFlags),
+	ActionUpdater(tryFillConnectionSetOptions),
+	FeedbackUpdater(tryUpgradeGridLedLooks),
 ] satisfies UpgradeScript[]

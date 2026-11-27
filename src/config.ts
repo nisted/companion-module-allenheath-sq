@@ -8,10 +8,21 @@ const FaderLawOptionId = 'faderLaw'
 const TalkbackChannelOptionId = 'talkbackChannel'
 const MidiChannelOptionId = 'midiChannel'
 const RetrieveStatusOptionId = 'retrieveStatusAtStartup'
+/** Whether to connect to the desk's A&H remote port (51326) too */
+const AHLinkOptionId = 'ahLink'
+/** Whether actions may change things over the A&H remote port */
+const AHControlOptionId = 'ahControl'
+/** How many Grid slots (channel + mix pairs) there are */
+const GridSlotsOptionId = 'gridSlots'
+
+/** The default and limits for the number of Grid slots */
+const DefaultGridSlots = 8
+export const MaxGridSlots = 32
 
 /**
- * The connection fields that can be handed over to the 'Connection: set
- * settings' action, with a "Can be set by the action" tick each.
+ * The connection fields the 'Set connection settings' action can change.
+ * Each has a hidden `<field>_set` flag (the action has set it) and a
+ * `<field>_changeBack` tick (hand it back to the connection page).
  */
 const ConnectionFieldIds = [
 	'host',
@@ -21,20 +32,36 @@ const ConnectionFieldIds = [
 	MidiChannelOptionId,
 	RetrieveStatusOptionId,
 	'verbose',
+	AHLinkOptionId,
+	AHControlOptionId,
+	GridSlotsOptionId,
 ] as const
 
-/** A connection field that can be handed over to the 'Connection: set settings' action */
+/** A connection field the 'Set connection settings' action can change */
 export type ConnectionFieldId = (typeof ConnectionFieldIds)[number]
 
-type ByActionId<F extends ConnectionFieldId> = `${F}_byAction`
-
-/** The id of a field's "Can be set by the action" tick */
-function byActionId<F extends ConnectionFieldId>(field: F): ByActionId<F> {
-	return `${field}_byAction`
+/** Every connection field the 'Set connection settings' action can change */
+export function connectionFieldIds(): readonly ConnectionFieldId[] {
+	return ConnectionFieldIds
 }
 
-/** The "Can be set by the action" ticks: true while the action has the field */
-type ByActionTicks = { [F in ConnectionFieldId as ByActionId<F>]: boolean }
+type SetId<F extends ConnectionFieldId> = `${F}_set`
+type ChangeBackId<F extends ConnectionFieldId> = `${F}_changeBack`
+
+/** The id of a field's hidden "set by an action" flag */
+function setId<F extends ConnectionFieldId>(field: F): SetId<F> {
+	return `${field}_set`
+}
+
+/** The id of a field's "Change back" tick */
+function changeBackId<F extends ConnectionFieldId>(field: F): ChangeBackId<F> {
+	return `${field}_changeBack`
+}
+
+/** The "set by an action" flags and "Change back" ticks */
+type ActionFlags = { [F in ConnectionFieldId as SetId<F>]: boolean } & {
+	[F in ConnectionFieldId as ChangeBackId<F>]: boolean
+}
 
 const ActionSavedId = 'actionSaved'
 
@@ -102,13 +129,25 @@ export type SQConfig = {
 	 */
 	verbose: boolean
 
+	/** Connect to the A&H remote port (51326) for names, selection and processing */
+	[AHLinkOptionId]: boolean
+
+	/** Let actions change processing over the A&H remote port */
+	[AHControlOptionId]: boolean
+
+	/** How many Grid slots there are */
+	[GridSlotsOptionId]: number
+
 	/**
-	 * Values typed on the connection page, put aside while their fields are
-	 * handed over to the 'Connection: set settings' action (JSON, field id ->
-	 * value), to put back when they're handed back.  Absent if there are none.
+	 * Values typed on the connection page, put aside while the 'Set
+	 * connection settings' action has those fields (JSON, field id -> value),
+	 * to put back on Change back.  Absent if there are none.
 	 */
 	[ActionSavedId]?: string
-} & ByActionTicks
+
+	/** The Grid slots (JSON), kept by the module, not shown on the connection page */
+	gridSlotState?: string
+} & ActionFlags
 
 /** All mixer secrets. */
 export type SQSecrets = undefined
@@ -213,6 +252,25 @@ const toVerbose = Boolean
 /** Get whether verbose logging is enabled. */
 export const getVerbose = Boolean
 
+/** Whether to connect to the A&H remote port (51326) too. */
+export function getAHLink(config: SQConfig): boolean {
+	return config[AHLinkOptionId]
+}
+
+/** Whether actions may change things over the A&H remote port. */
+export function getAHControl(config: SQConfig): boolean {
+	return config[AHControlOptionId]
+}
+
+/** How many Grid slots there are (1 to 32). */
+export function getGridSlots(config: SQConfig): number {
+	const n = config[GridSlotsOptionId]
+	return Number.isInteger(n) && 1 <= n && n <= MaxGridSlots ? n : DefaultGridSlots
+}
+
+/** A switch that defaults to on: anything but `false` is on */
+const toDefaultOn = (v: unknown): boolean => v !== false
+
 /**
  * Force `config` into type-conformance (but not necessarily semantic validity)
  * with `SQConfig`.  (The individual accessor functions must be used to get
@@ -226,13 +284,38 @@ export function validateConfig(config: RawConfig): asserts config is SQConfig {
 	config.midiChannel = toMidiChannel(config.midiChannel)
 	config.retrieveStatusAtStartup = toRetrieveStatusAtStartup(config.retrieveStatusAtStartup)
 	config.verbose = toVerbose(config.verbose)
+	config[AHLinkOptionId] = toDefaultOn(config[AHLinkOptionId])
+	config[AHControlOptionId] = toDefaultOn(config[AHControlOptionId])
+	config[GridSlotsOptionId] =
+		config[GridSlotsOptionId] === undefined ? DefaultGridSlots : Number(config[GridSlotsOptionId])
 	for (const field of ConnectionFieldIds) {
-		const tick = byActionId(field)
-		config[tick] = config[tick] === true
+		config[setId(field)] = config[setId(field)] === true
+		config[changeBackId(field)] = config[changeBackId(field)] === true
 	}
 	if (typeof config[ActionSavedId] !== 'string') {
 		delete config[ActionSavedId]
 	}
+	if (typeof config.gridSlotState !== 'string') {
+		delete config.gridSlotState
+	}
+}
+
+/**
+ * Connections saved before the new 'Set connection settings' pattern had a
+ * "Can be set by the action" tick per field (`<field>_byAction`).  A ticked
+ * field becomes one the action has set (so it keeps its value, and what was
+ * typed before is still put aside for Change back); the ticks go.
+ */
+export function tryMoveByActionTicksToSetFlags(config: RawConfig): boolean {
+	let changed = false
+	for (const key of Object.keys(config)) {
+		const match = /^(.+)_byAction$/.exec(key)
+		if (match === null) continue
+		if (config[key] === true) config[`${match[1]}_set`] = true
+		delete config[key]
+		changed = true
+	}
+	return changed
 }
 
 /** Ensure a 'model' property is present in configs that lack it. */
@@ -343,36 +426,33 @@ export function tryRenameVariousConfigIds(config: RawConfig): boolean {
 	return false
 }
 
-/** Labels for the connection fields, as on the connection page */
+/** Labels for the connection fields, as on the connection page (upstream's, where upstream has the field) */
 export const ConnectionFieldLabels: Record<ConnectionFieldId, string> = {
 	host: 'Target IP',
-	model: 'Console type',
-	[FaderLawOptionId]: 'NRPN fader law',
+	model: 'Console Type',
+	[FaderLawOptionId]: 'NRPN Fader Law',
 	[TalkbackChannelOptionId]: 'Default talkback input channel',
 	[MidiChannelOptionId]: 'MIDI channel',
 	[RetrieveStatusOptionId]: 'Retrieve console status',
-	verbose: 'Verbose logging',
+	verbose: 'Enable Verbose Logging',
+	[AHLinkOptionId]: 'A&H remote link (port 51326)',
+	[AHControlOptionId]: 'Allow changes over the A&H remote link',
+	[GridSlotsOptionId]: 'Grid slots',
 }
 
-const ByActionTip =
-	"Hands this field over to the 'Connection: set settings' action, so a button or a trigger can change it (from a variable, say). " +
-	"While it's ticked the field's locked here and shows what the action last set. Untick it and you get back what you'd typed before."
+const ChangeBackTip =
+	"Set by a 'Set connection settings' action. Tick it and Save to go back to the value typed here before."
 
-/** Whether a connection field is ticked "Can be set by the action" */
-function isTicked(config: SQConfig, field: ConnectionFieldId): boolean {
-	return config[byActionId(field)]
-}
-
-/** The connection fields ticked "Can be set by the action" */
-export function tickedConnectionFields(config: SQConfig): ConnectionFieldId[] {
-	return ConnectionFieldIds.filter((field) => isTicked(config, field))
+/** Whether the 'Set connection settings' action has set a connection field */
+function isSetByAction(config: SQConfig, field: ConnectionFieldId): boolean {
+	return config[setId(field)]
 }
 
 function choiceLabel<T extends string | number>(choices: DropdownChoice<T>[], id: unknown): string {
 	return choices.find((choice) => choice.id === id)?.label ?? String(id)
 }
 
-/** A connection field's current value, as shown while it's locked */
+/** A connection field's current value, as shown while an action has set it */
 function shownValue(config: SQConfig, field: ConnectionFieldId): string {
 	switch (field) {
 		case 'host':
@@ -389,36 +469,60 @@ function shownValue(config: SQConfig, field: ConnectionFieldId): string {
 			return choiceLabel(RetrieveStatusChoices, getRetrieveStatusAtStartup(config))
 		case 'verbose':
 			return config.verbose ? 'on' : 'off'
+		case AHLinkOptionId:
+			return getAHLink(config) ? 'on' : 'off'
+		case AHControlOptionId:
+			return getAHControl(config) ? 'on' : 'off'
+		case GridSlotsOptionId:
+			return String(getGridSlots(config))
 	}
 }
 
 /**
- * A connection field, plus its "Can be set by the action" tick and the line
- * that shows its value while it's ticked (and the field is hidden).
+ * A connection field.  Once a 'Set connection settings' action has set it,
+ * the field is hidden and a line shows its value instead, with a Change back
+ * tick beside it.  The hidden `<field>_set` flag remembers which fields the
+ * action has set.
  */
 function lockable(
 	config: SQConfig,
 	field: SomeCompanionConfigField & { id: ConnectionFieldId },
 ): SomeCompanionConfigField[] {
-	const tick = byActionId(field.id)
+	const set = setId(field.id)
 	return [
-		{ ...field, width: 8, isVisibleExpression: `!$(options:${tick})` },
+		{
+			...field,
+			isVisibleExpression:
+				field.isVisibleExpression === undefined
+					? `!$(options:${set})`
+					: `(${field.isVisibleExpression}) && !$(options:${set})`,
+		},
 		{
 			type: 'static-text',
 			id: `${field.id}_locked`,
 			label: field.label,
-			width: 8,
-			value: `Set by the 'Connection: set settings' action: ${shownValue(config, field.id)}`,
-			isVisibleExpression: `$(options:${tick})`,
+			width: 9,
+			value: `${shownValue(config, field.id)} <i>(set by an action)</i>`,
+			isVisibleExpression: `$(options:${set})`,
 		},
 		{
 			type: 'checkbox',
-			id: tick,
-			label: 'Can be set by the action',
-			width: 4,
+			id: changeBackId(field.id),
+			label: 'Change back',
+			width: 3,
 			default: false,
 			disableAutoExpression: true,
-			tooltip: ByActionTip,
+			tooltip: ChangeBackTip,
+			isVisibleExpression: `$(options:${set})`,
+		},
+		{
+			type: 'checkbox',
+			id: set,
+			label: 'Set by an action',
+			width: 3,
+			default: false,
+			disableAutoExpression: true,
+			isVisibleExpression: 'false',
 		},
 	]
 }
@@ -427,8 +531,8 @@ function lockable(
  * Get SQ module configuration fields.
  *
  * @param config
- *   The connection's current config, for showing the values of fields handed
- *   over to the 'Connection: set settings' action.
+ *   The connection's current config, for showing the values of fields set by
+ *   the 'Set connection settings' action.
  */
 export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 	return [
@@ -439,15 +543,22 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			label: 'Hello there',
 			value:
 				"This one talks to Allen & Heath SQ series mixing desks (SQ5, SQ6 and SQ7). Fill in the bits below and we're off." +
-				'<br>Want a button, a trigger or a variable to change one of these settings? Tick <b>Can be set by the action</b> next to it, then use the <b>Connection: set settings</b> action.',
+				'<br>Want a button, a trigger or a variable to change a setting? Use the <b>Set connection settings</b> action. Anything it sets shows up here with a <b>Change back</b> tick.',
+		},
+		{
+			type: 'static-text',
+			id: 'ports',
+			width: 12,
+			label: 'Ports',
+			value:
+				'TCP 51325 (MIDI over TCP/IP, fixed by the desk). With the A&H remote link on, TCP 51326 as well (the port SQ MixPad uses).',
 		},
 		...lockable(config, {
 			type: 'textinput',
 			id: 'host',
 			label: ConnectionFieldLabels.host,
-			width: 6,
-			tooltip:
-				'Where the desk lives on the network. Its IP address, basically. It needs to be on the same network as Companion.',
+			width: 9,
+			tooltip: "The desk's IP address. Companion needs to be on the same network.",
 			default: '192.168.0.5',
 			regex: Regex.IP,
 		}),
@@ -455,8 +566,8 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			type: 'dropdown',
 			id: 'model',
 			label: ConnectionFieldLabels.model,
-			width: 6,
-			tooltip: "Which SQ you've got, so the lists show the right channels, mixes and so on.",
+			width: 9,
+			tooltip: 'The SQ model, so the lists show the right channels and mixes.',
 			default: DefaultModel,
 			choices: ModelChoices,
 		}),
@@ -464,23 +575,22 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			type: 'dropdown',
 			id: FaderLawOptionId,
 			label: ConnectionFieldLabels[FaderLawOptionId],
-			width: 6,
-			tooltip:
-				"Must match the fader law in the desk's MIDI settings. Important: get it wrong and every level will be off.",
+			width: 9,
+			tooltip: "Must match the NRPN fader law in the desk's MIDI settings, or every level will be wrong.",
 			default: 'LinearTaper',
 			choices: FaderLawChoices,
 		}),
 		...lockable(config, {
 			...createDefaultTalkbackChannelOption(),
 			id: TalkbackChannelOptionId,
+			width: 9,
 		}),
 		...lockable(config, {
 			type: 'number',
 			id: MidiChannelOptionId,
 			label: ConnectionFieldLabels[MidiChannelOptionId],
-			width: 6,
-			tooltip:
-				"Must match the MIDI channel set on the desk (1 to 16). Important: if they don't agree, nothing gets through.",
+			width: 9,
+			tooltip: 'Must match the MIDI channel set on the desk (1 to 16).',
 			min: 1,
 			max: 16,
 			default: 1,
@@ -489,9 +599,9 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			type: 'dropdown',
 			id: RetrieveStatusOptionId,
 			label: ConnectionFieldLabels[RetrieveStatusOptionId],
-			width: 6,
+			width: 9,
 			tooltip:
-				'When I ask the desk for its mutes, levels and so on. Fully: the lot, straight away (keeps the desk busy longest). Delayed: a short wait, then spread over a few seconds. Not at startup: only as each thing is needed.',
+				'When to ask the desk for its mutes, levels and so on. Fully: all of it on connecting. Delayed: after a short wait, spread over a few seconds. Not at startup: each one as it is needed.',
 			default: 'full',
 			choices: RetrieveStatusChoices,
 		}),
@@ -499,9 +609,39 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			type: 'checkbox',
 			id: 'verbose',
 			label: ConnectionFieldLabels.verbose,
-			width: 12,
-			tooltip: "Writes everything to the log. Chatty, but handy when something's being odd.",
+			width: 9,
+			tooltip: 'Writes extra detail to the log.',
 			default: false,
+		}),
+		...lockable(config, {
+			type: 'checkbox',
+			id: AHLinkOptionId,
+			label: ConnectionFieldLabels[AHLinkOptionId],
+			width: 9,
+			tooltip:
+				"Also connects to TCP port 51326, the port SQ MixPad uses, for channel names, the selected channel and channel processing (preamp, HPF, gate, compressor, EQ, delay, insert, PAFL). Allen & Heath don't document this port. Everything on MIDI keeps working without it.",
+			default: true,
+			disableAutoExpression: true,
+		}),
+		...lockable(config, {
+			type: 'checkbox',
+			id: AHControlOptionId,
+			label: ConnectionFieldLabels[AHControlOptionId],
+			width: 9,
+			tooltip:
+				'Lets actions change preamp, HPF, gate, compressor, EQ, delay, insert and PAFL over the A&H remote link. Off = names, selection and values are read only.',
+			default: true,
+			isVisibleExpression: `$(options:${AHLinkOptionId})`,
+		}),
+		...lockable(config, {
+			type: 'number',
+			id: GridSlotsOptionId,
+			label: ConnectionFieldLabels[GridSlotsOptionId],
+			width: 9,
+			tooltip: `How many Grid slots (a channel and a mix each, set by the Grid presets) to provide, 1 to ${MaxGridSlots}.`,
+			min: 1,
+			max: MaxGridSlots,
+			default: DefaultGridSlots,
 		}),
 		{
 			type: 'static-text',
@@ -509,12 +649,12 @@ export function GetConfigFields(config: SQConfig): SomeCompanionConfigField[] {
 			width: 12,
 			label: "Psst. This one's got mates. 🍹",
 			value:
-				'This tweaked SQ module is part of a little crew of Companion modules: some brand new, some old favourites given a good tweak. Want to know who else is in the crew, or grab the freshest version of each one? It\'s all here: <a href="https://github.com/nisted/companion-modules" target="_blank">github.com/nisted/companion-modules</a>',
+				'SQ Rebel is part of a little crew of Companion modules: some brand new, some old favourites given a good tweak. Want to know who else is in the crew, or grab the freshest version of each one? It\'s all here: <a href="https://github.com/nisted/companion-modules" target="_blank">https://github.com/nisted/companion-modules</a>',
 		},
 	]
 }
 
-/** The values put aside while fields are handed over to the action */
+/** The values put aside while the action has fields */
 function savedValues(config: SQConfig): Partial<Record<ConnectionFieldId, JsonValue>> {
 	try {
 		const parsed: unknown = JSON.parse(config[ActionSavedId] ?? '{}')
@@ -534,54 +674,104 @@ function savedValues(config: SQConfig): Partial<Record<ConnectionFieldId, JsonVa
 	}
 }
 
+function storeSaved(config: SQConfig, saved: Partial<Record<ConnectionFieldId, JsonValue>>): void {
+	if (Object.keys(saved).length > 0) {
+		config[ActionSavedId] = JSON.stringify(saved)
+	} else {
+		delete config[ActionSavedId]
+	}
+}
+
 /**
- * Apply the "Can be set by the action" ticks to a config just saved from the
- * connection page, given the config in use until now.  Rewrites `newConfig`:
+ * Apply a config just saved from the connection page, given the config in
+ * use until now.  Rewrites `newConfig`:
  *
- *   * a field just ticked: its value is put aside, to come back when unticked
- *   * a field still ticked: the connection page's value is ignored (only the
- *     action sets it now)
- *   * a field just unticked: the put-aside value comes back
+ *   * a field the action has set, with Change back ticked: the value typed
+ *     before the action took it comes back, and the field is the page's again
+ *   * a field the action has set, without Change back: the page can't change
+ *     it (it keeps the action's value)
+ *   * any other field: as typed
  *
- * @returns
- *   `ticksChanged`: whether any tick changed (so the action's options must be
- *   redefined); `changed`: whether `newConfig` now differs from what came in
- *   (so it must be saved back).
+ * Change back ticks are always cleared.
+ *
+ * @returns whether `newConfig` now differs from what came in (so it must be saved back)
  */
-export function applyByActionTicks(
-	oldConfig: SQConfig,
-	newConfig: SQConfig,
-): { ticksChanged: boolean; changed: boolean } {
+export function applyConnectionPage(oldConfig: SQConfig, newConfig: SQConfig): boolean {
 	const before = JSON.stringify(newConfig)
 	const saved = savedValues(oldConfig)
 	const config = newConfig as RawConfig
-	let ticksChanged = false
+
+	// Kept by the module, not typed on the page: carry it over
+	if (oldConfig.gridSlotState !== undefined) {
+		config.gridSlotState = oldConfig.gridSlotState
+	}
 
 	for (const field of ConnectionFieldIds) {
-		const was = isTicked(oldConfig, field)
-		const now = isTicked(newConfig, field)
-		if (!was && now) {
-			saved[field] = newConfig[field]
-			ticksChanged = true
-		} else if (was && now) {
-			config[field] = oldConfig[field]
-		} else if (was && !now) {
+		const owned = isSetByAction(oldConfig, field)
+		if (owned && newConfig[changeBackId(field)]) {
 			if (field in saved) {
 				config[field] = saved[field]
 			}
 			delete saved[field]
-			ticksChanged = true
+			config[setId(field)] = false
+		} else if (owned) {
+			config[field] = oldConfig[field]
+			config[setId(field)] = true
+		} else {
+			config[setId(field)] = false
+		}
+		config[changeBackId(field)] = false
+	}
+
+	storeSaved(newConfig, saved)
+	validateConfig(config)
+	return JSON.stringify(newConfig) !== before
+}
+
+/**
+ * Apply values from the 'Set connection settings' action to a copy of
+ * `config`.  Blank values leave a field alone; a value that doesn't fit the
+ * field is skipped and reported through `warn`.  The first time the action
+ * sets a field, what was typed on the page is put aside for Change back.
+ *
+ * @returns the new config, or null if nothing changed
+ */
+export function applyActionSettings(
+	config: SQConfig,
+	values: Partial<Record<ConnectionFieldId, string>>,
+	warn: (message: string) => void,
+): SQConfig | null {
+	const next: RawConfig = { ...config }
+	const saved = savedValues(config)
+	let changed = false
+
+	for (const field of ConnectionFieldIds) {
+		const text = (values[field] ?? '').trim()
+		if (text === '') continue
+
+		const parsed = parseConnectionSetting(field, text)
+		if (!parsed.ok) {
+			warn(
+				`Set connection settings: "${ConnectionFieldLabels[field]}" ${parsed.why}, and "${text}" isn't. Left it as it was.`,
+			)
+			continue
+		}
+
+		if (next[setId(field)] !== true) {
+			saved[field] = config[field]
+			next[setId(field)] = true
+			changed = true
+		}
+		if (JSON.stringify(next[field]) !== JSON.stringify(parsed.value)) {
+			next[field] = parsed.value
+			changed = true
 		}
 	}
 
-	if (Object.keys(saved).length > 0) {
-		newConfig[ActionSavedId] = JSON.stringify(saved)
-	} else {
-		delete newConfig[ActionSavedId]
-	}
-
-	validateConfig(config)
-	return { ticksChanged, changed: JSON.stringify(newConfig) !== before }
+	if (!changed) return null
+	validateConfig(next)
+	storeSaved(next, saved)
+	return next
 }
 
 type ParsedSetting = { ok: true; value: JsonValue } | { ok: false; why: string }
@@ -636,11 +826,19 @@ export function parseConnectionSetting(field: ConnectionFieldId, text: string): 
 				? { ok: true, value: retrieve }
 				: { ok: false, why: `needs one of ${choiceList(RetrieveStatusChoices)}` }
 		}
-		case 'verbose': {
+		case 'verbose':
+		case AHLinkOptionId:
+		case AHControlOptionId: {
 			const lower = text.toLowerCase()
 			if (['true', 'on', 'yes', '1'].includes(lower)) return { ok: true, value: true }
 			if (['false', 'off', 'no', '0'].includes(lower)) return { ok: true, value: false }
 			return { ok: false, why: 'needs on or off (true/false, yes/no and 1/0 work too)' }
+		}
+		case GridSlotsOptionId: {
+			const n = Number(text)
+			return Number.isInteger(n) && 1 <= n && n <= MaxGridSlots
+				? { ok: true, value: n }
+				: { ok: false, why: `needs a whole number from 1 to ${MaxGridSlots}` }
 		}
 	}
 }
@@ -661,7 +859,11 @@ export function connectionSettingHint(field: ConnectionFieldId): string {
 		case RetrieveStatusOptionId:
 			return `${choiceList(RetrieveStatusChoices)}.`
 		case 'verbose':
+		case AHLinkOptionId:
+		case AHControlOptionId:
 			return 'on or off.'
+		case GridSlotsOptionId:
+			return `1 to ${MaxGridSlots}.`
 	}
 }
 
@@ -678,7 +880,7 @@ function toNumberDefaultZero(v: unknown): number {
  * with an actual config.
  */
 export function noConnectionConfig(): SQConfig {
-	return {
+	const config: RawConfig = {
 		host: '',
 		model: DefaultModel,
 		faderLaw: 'LinearTaper',
@@ -686,14 +888,12 @@ export function noConnectionConfig(): SQConfig {
 		midiChannel: oneIndexedNumber(1),
 		retrieveStatusAtStartup: RetrieveStatusAtStartup.Fully,
 		verbose: false,
-		host_byAction: false,
-		model_byAction: false,
-		faderLaw_byAction: false,
-		talkbackChannel_byAction: false,
-		midiChannel_byAction: false,
-		retrieveStatusAtStartup_byAction: false,
-		verbose_byAction: false,
+		[AHLinkOptionId]: true,
+		[AHControlOptionId]: true,
+		[GridSlotsOptionId]: DefaultGridSlots,
 	}
+	validateConfig(config)
+	return config
 }
 
 /**
@@ -738,6 +938,18 @@ export function canUpdateConfigWithoutRestarting(oldConfig: SQConfig, newConfig:
 	// you really want it to, because verbose logging of 26KB of startup status
 	// retrieval is extremely slow (particularly if the instance debug log is
 	// open.)
+
+	// The A&H remote link is started with the mixer connection, and the number
+	// of Grid slots changes the variable, action and preset definitions.
+	if (oldConfig[AHLinkOptionId] !== newConfig[AHLinkOptionId]) {
+		return false
+	}
+	if (oldConfig[GridSlotsOptionId] !== newConfig[GridSlotsOptionId]) {
+		return false
+	}
+
+	// Allowing changes over the A&H remote link is checked as each action
+	// runs, so it needs no restart.
 
 	// Otherwise we can update options without restarting.
 	return true

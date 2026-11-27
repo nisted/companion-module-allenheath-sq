@@ -20,4 +20,14 @@ export type SQVariables = {
 
 	[level: `level_${number}.${number}`]: Level
 	[panLevel: `pan_${number}.${number}`]: PanBalance
+
+	// SQ Rebel: the A&H remote link and the Grid slots (see rebel.ts)
+	ah_link?: string
+	selected_channel?: number | ''
+	selected_name?: string
+	lr_name?: string
+	[channelName: `ch_name_${number}`]: string
+	[processing: `ch${number}_${string}`]: number | string
+	[selectedProcessing: `sel_${string}`]: number | string
+	[gridSlot: `grid${number}_${string}`]: number | string | boolean
 }

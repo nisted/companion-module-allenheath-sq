@@ -1,5 +1,5 @@
+import type { JsonValue } from '@companion-module/base'
 import type { Equal, Expect } from 'type-testing'
-import type { LR } from '../../types.js'
 
 /**
  * Feedback IDs for the Grid additions' LED feedbacks.  The ids are the ones
@@ -15,33 +15,39 @@ export type GridFeedbackId = (typeof GridFeedbackId)[keyof typeof GridFeedbackId
 export const GridFeedbackInputChannelOptionId = 'inputChannel'
 export const GridFeedbackMixOptionId = 'mix'
 
-/** Numbers that also take expressions, and fall back to the default if they aren't numbers */
-type LenientNumber = number | string
+/** The Grid fader's value option on the pickup LED */
+export const GridFeedbackValueOptionId = 'value'
+/** Tracking: brightness follows the fader */
+export const GridFeedbackTrackingBrightnessOptionId = 'trackingBrightness'
+
+/** The level-at-target options */
+export const GridFeedbackTargetOptionId = 'target'
+export const GridFeedbackTargetBandOptionId = 'targetBand'
+
+/** The LED states of the pickup LED, as option id prefixes for their looks */
+export const PickupLookPrefixes = ['below', 'above', 'releasedBelow', 'releasedAbove', 'catch', 'tracking'] as const
+
+/** The look option id prefix of the level-at-target LED */
+export const TargetLookPrefix = 'atTarget'
 
 type GridFeedbackChannelMixOptions = {
-	[GridFeedbackInputChannelOptionId]: number
-	[GridFeedbackMixOptionId]: number | typeof LR
+	[GridFeedbackInputChannelOptionId]: number | string
+	/** LR, a mix number, or typed / from an expression */
+	[GridFeedbackMixOptionId]: number | string
 }
+
+/** The looks' options (see led-look.ts) */
+type LookOptions = { [key: string]: JsonValue | undefined }
 
 type PickupLedOptions = GridFeedbackChannelMixOptions & {
-	value: string
-	belowColour: string
-	belowFlash: boolean
-	aboveColour: string
-	aboveFlash: boolean
-	catchColour: string
-	trackingColour: string
-	flashMs: LenientNumber
-}
+	[GridFeedbackValueOptionId]: string
+	[GridFeedbackTrackingBrightnessOptionId]: boolean
+} & LookOptions
 
 type LevelAtTargetLedOptions = GridFeedbackChannelMixOptions & {
-	target: string
-	targetBand: LenientNumber
-	colour: string
-	flash: boolean
-	flashMs: LenientNumber
-	offColour: string
-}
+	[GridFeedbackTargetOptionId]: string
+	[GridFeedbackTargetBandOptionId]: number | string
+} & LookOptions
 
 /** The Grid LED feedbacks. */
 export type GridFeedbacks = {

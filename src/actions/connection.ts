@@ -1,18 +1,10 @@
-import type {
-	CompanionActionDefinitions,
-	CompanionInputFieldStaticText,
-	CompanionInputFieldTextInput,
-} from '@companion-module/base'
-import {
-	ConnectionFieldLabels,
-	type ConnectionFieldId,
-	connectionSettingHint,
-	tickedConnectionFields,
-} from '../config.js'
+import type { CompanionActionDefinitions, CompanionInputFieldTextInput } from '@companion-module/base'
+import { ConnectionFieldLabels, type ConnectionFieldId, connectionFieldIds, connectionSettingHint } from '../config.js'
 import type { sqInstance } from '../instance.js'
-import { ConnectionActionId, type ConnectionActions, ConnectionNothingTickedOptionId } from './schemas/connection.js'
+import { optionText } from './grid-level.js'
+import { ConnectionActionId, type ConnectionActions } from './schemas/connection.js'
 
-/** An option for a connection field ticked "Can be set by the action" */
+/** An option for one connection field */
 function settingOption(field: ConnectionFieldId): CompanionInputFieldTextInput<ConnectionFieldId> {
 	return {
 		type: 'textinput',
@@ -20,34 +12,24 @@ function settingOption(field: ConnectionFieldId): CompanionInputFieldTextInput<C
 		label: ConnectionFieldLabels[field],
 		default: '',
 		useVariables: true,
-		tooltip: `${connectionSettingHint(field)} Blank = leave as is.`,
+		tooltip: `${connectionSettingHint(field)} Blank = leave as is. Values that don't fit are skipped and logged.`,
 	}
 }
 
-const NothingTicked: CompanionInputFieldStaticText<typeof ConnectionNothingTickedOptionId> = {
-	type: 'static-text',
-	id: ConnectionNothingTickedOptionId,
-	label: 'Nothing to set yet',
-	value:
-		'Tick "Can be set by the action" next to a field on this connection\'s settings page first. Then it turns up here, ready to set.',
-}
-
-/**
- * The 'Connection: set settings' action.  Its options are the connection
- * fields currently ticked "Can be set by the action", so these definitions
- * must be set again whenever the ticks change.
- */
+/** The 'Set connection settings' action: it can change any connection field. */
 export function connectionActions(instance: sqInstance): CompanionActionDefinitions<ConnectionActions> {
-	const ticked = tickedConnectionFields(instance.config)
-
 	return {
 		[ConnectionActionId.SetSettings]: {
-			name: 'Connection: set settings',
+			name: 'Set connection settings',
 			description:
-				'Changes this connection\'s settings, for the fields ticked "Can be set by the action" on the connection page. Blank = leave as is. Put it in a trigger on "variable changed" to drive the connection from a variable.',
-			options: ticked.length > 0 ? ticked.map(settingOption) : [NothingTicked],
+				'Changes this connection\'s settings. Fill in only what you want to change; blank = leave as is. Anything set here shows on the connection page with a Change back tick. Put it in a trigger on "variable changed" to drive the connection from a variable.',
+			options: connectionFieldIds().map(settingOption),
 			callback: async ({ options }) => {
-				await instance.setConnectionSettings(options)
+				const values: Partial<Record<ConnectionFieldId, string>> = {}
+				for (const field of connectionFieldIds()) {
+					values[field] = optionText(options[field])
+				}
+				await instance.setConnectionSettings(values)
 			},
 		},
 	}

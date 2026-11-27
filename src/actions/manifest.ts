@@ -6,6 +6,7 @@ import type { GridLevelActions } from './schemas/grid-level.js'
 import type { LevelActions } from './schemas/level.js'
 import type { MuteActions } from './schemas/mute.js'
 import type { PanBalanceActions } from './schemas/pan-balance.js'
+import type { RebelActions } from './schemas/rebel.js'
 import type { SceneActions } from './schemas/scene.js'
 import type { SoftKeyActions } from './schemas/softkey.js'
 
@@ -18,5 +19,6 @@ export type SQActions = AssignActions &
 	OutputLevelActions &
 	OutputPanBalanceActions &
 	PanBalanceActions &
+	RebelActions &
 	SceneActions &
 	SoftKeyActions
