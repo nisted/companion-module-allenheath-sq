@@ -69,7 +69,23 @@ export interface LookExtras {
 }
 
 /** The option ids of one LED state's look */
-export function lookIds(prefix: string) {
+interface LookIds {
+	custom: string
+	effect: string
+	count: string
+	colour1: string
+	colour2: string
+	colour3: string
+	colour4: string
+	rate: string
+	underneath: string
+	approach: string
+	approachFastest: string
+	approachFrom: string
+}
+
+/** The option ids of one LED state's look */
+export function lookIds(prefix: string): LookIds {
 	return {
 		custom: `${prefix}Custom`,
 		effect: `${prefix}Effect`,
@@ -83,7 +99,7 @@ export function lookIds(prefix: string) {
 		approach: `${prefix}Approach`,
 		approachFastest: `${prefix}ApproachFastest`,
 		approachFrom: `${prefix}ApproachFrom`,
-	} as const
+	}
 }
 
 type LookOption =
@@ -176,7 +192,7 @@ export function lookOptions(
 		},
 	]
 
-	if (extras.approach) {
+	if (extras.approach === true) {
 		options.push(
 			{
 				type: 'checkbox',
@@ -234,7 +250,7 @@ export function lookDefaultValues(
 		[id.rate]: defaults.rateMs,
 		[id.underneath]: defaults.underneath,
 	}
-	if (extras.approach) {
+	if (extras.approach === true) {
 		values[id.approach] = false
 		values[id.approachFastest] = DefaultApproachFastestMs
 		values[id.approachFrom] = DefaultApproachFromSteps
@@ -336,7 +352,7 @@ export function readLook(
 		.map((colourId, i) => parseColour(options[colourId], defaults.colours[i]))
 	const rateMs = parseNumber(options[id.rate], defaults.rateMs, MinRateMs, MaxRateMs)
 	const approach =
-		extras.approach && effect !== 'solid' && options[id.approach] === true
+		extras.approach === true && effect !== 'solid' && options[id.approach] === true
 			? {
 					fastestMs: parseNumber(options[id.approachFastest], DefaultApproachFastestMs, MinRateMs, MaxRateMs),
 					fromSteps: parseNumber(options[id.approachFrom], DefaultApproachFromSteps, 1, 127),

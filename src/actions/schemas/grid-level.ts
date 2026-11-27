@@ -1,6 +1,5 @@
 import type { Equal, Expect } from 'type-testing'
 import type { LevelSetSinkOptionId, LevelSetSourceOptionId } from './level.js'
-import type { LR } from '../../types.js'
 
 /**
  * Action IDs for the Grid additions: setting a level from a fader value (an

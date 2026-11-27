@@ -25,7 +25,7 @@ function defaultSlot(slot: number): GridSlot {
 
 /** Read stored slots, falling back to defaults for anything missing or broken */
 export function readSlots(stored: string | undefined, count: number, channels: number, mixes: number): GridSlot[] {
-	let parsed: unknown = []
+	let parsed: unknown
 	try {
 		parsed = JSON.parse(stored ?? '[]')
 	} catch (_e) {
